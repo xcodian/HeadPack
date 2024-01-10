@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     fmt::{self, Debug, Formatter},
 };
 
@@ -7,7 +6,7 @@ use crate::encode::{sint_to_bytes, uint_to_bytes};
 
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
-pub(crate) enum ValueClass {
+pub enum ValueClass {
     String,
     Bytes,
     Collection,
@@ -186,6 +185,7 @@ impl Object {
         }
     }
 
+    #[allow(dead_code)]
     pub fn timestamp32(t: u32) -> Self {
         Object {
             length: 4,

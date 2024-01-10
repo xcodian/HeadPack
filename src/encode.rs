@@ -30,7 +30,6 @@ pub fn headpack_encode(root: Object) -> Vec<u8> {
 
     write_classes_section(&objects, &mut buf);
     write_lengths_section(&objects, &mut buf);
-    println!("HEADER: {} bytes: {}", buf.len(), hex::encode(buf.clone()));
 
     write_data(objects.into_iter(), &mut buf).unwrap();
 
@@ -215,8 +214,6 @@ fn write_lengths_section(objects: &[Object], data: &mut Vec<u8>) {
 
 fn write_length_chunks(objects: &[&Object], chunks: &mut Vec<u8>) {
     for object in objects {
-        use object::Value;
-
         let length = match &object.value {
             // uint has a variable length but offset by 16
             Value::UInt(_) => object.length + 16,
@@ -255,8 +252,6 @@ fn write_length_chunks(objects: &[&Object], chunks: &mut Vec<u8>) {
 }
 
 fn write_data(objects: impl Iterator<Item = Object>, buf: &mut Vec<u8>) -> io::Result<()> {
-    use object::Value;
-
     for object in objects {
         match object.value {
             Value::String(s) => {

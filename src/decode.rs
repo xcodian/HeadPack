@@ -6,7 +6,7 @@ use crate::{
 };
 
 /// warning: mutates `data`
-pub fn headpack_message_decode(mut data: VecDeque<u8>) -> Object {
+pub fn headpack_decode(mut data: VecDeque<u8>) -> Object {
     let kinds = decode_classes_section(&mut data);
     let objects = decode_lengths_section(&kinds, &mut data);
 
@@ -203,8 +203,6 @@ pub fn collapse_collections(
                 collapse_collections(iter, l, object.length as isize);
             }
             Value::Map(ref mut v) => {
-                println!("map!");
-
                 let mut flat = Vec::with_capacity(object.length);
                 collapse_collections(iter, &mut flat, (object.length * 2) as isize);
                 let mut flat = VecDeque::from(flat);
