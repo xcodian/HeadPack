@@ -41,7 +41,7 @@ impl Object {
                 let mut pairs = Vec::with_capacity(map.len());
 
                 for (key, value) in map {
-                    pairs.push((Self::string(key), Self::from_json(value)));
+                    pairs.push((key, Self::from_json(value)));
                 }
 
                 Object::map(pairs)
@@ -51,7 +51,7 @@ impl Object {
 
     pub fn into_json(self) -> serde_json::Value {
         match self.value {
-            object::Value::String(s) => serde_json::Value::String(s),
+            object::Value::String{ string, encode_class: _ } => serde_json::Value::String(string),
             object::Value::Bytes(b) => {
                 serde_json::Value::String(base64::engine::general_purpose::STANDARD.encode(&b))
             }
@@ -59,14 +59,7 @@ impl Object {
                 let mut json_map = serde_json::Map::with_capacity(m.len());
 
                 for (key, value) in m {
-                    match key.value {
-                        object::Value::String(k) => {
-                            json_map.insert(k, value.into_json());
-                        }
-                        _ => {
-                            panic!("Map keys must be strings");
-                        }
-                    }
+                    json_map.insert(key, value.into_json());
                 }
 
                 serde_json::Value::Object(json_map)

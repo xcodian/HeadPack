@@ -1,6 +1,4 @@
-use std::{
-    fmt::{self, Debug, Formatter},
-};
+use std::fmt::{self, Debug, Formatter};
 
 use crate::encode::{sint_to_bytes, uint_to_bytes};
 
@@ -25,12 +23,12 @@ impl From<u8> for ValueClass {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Value {
-    String(String),
+    String { string: String, encode_class: bool },
     Bytes(Vec<u8>),
 
-    Map(Vec<(Object, Object)>),
+    Map(Vec<(String, Object)>),
     List(Vec<Object>),
 
     Bool(bool),
@@ -45,11 +43,14 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn class(&self) -> u8 {
+    pub fn get_class_2bit(&self) -> u8 {
         match self {
-            Value::String(_) => 0,
-            Value::Bytes(_) => 1,
-            Value::Map(_) | Value::List(_) => 2,
+            Value::String {
+                string: _,
+                encode_class: _,
+            } => 0b00,
+            Value::Bytes(_) => 0b01,
+            Value::Map(_) | Value::List(_) => 0b10,
             Value::Bool(_)
             | Value::SInt(_)
             | Value::UInt(_)
@@ -57,31 +58,34 @@ impl Value {
             | Value::Float64(_)
             | Value::Null
             | Value::Timestamp32(_)
-            | Value::UserDefined { id: _, data: _ } => 3,
+            | Value::UserDefined { id: _, data: _ } => 0b11,
         }
     }
 }
 
-impl Debug for Value {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            Value::Null => write!(f, "null"),
-            Value::UserDefined { id, data } => {
-                write!(f, "UserDefined {{ id: {}, data: {:?} }}", id, data)
-            }
-            Value::String(v) => v.fmt(f),
-            Value::Bytes(v) => v.fmt(f),
-            Value::Map(v) => v.fmt(f),
-            Value::List(v) => v.fmt(f),
-            Value::Bool(v) => v.fmt(f),
-            Value::SInt(v) => v.fmt(f),
-            Value::UInt(v) => v.fmt(f),
-            Value::Float32(v) => v.fmt(f),
-            Value::Float64(v) => v.fmt(f),
-            Value::Timestamp32(v) => v.fmt(f),
-        }
-    }
-}
+// impl Debug for Value {
+//     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+//         match self {
+//             Value::Null => write!(f, "null"),
+//             Value::UserDefined { id, data } => {
+//                 write!(f, "UserDefined {{ id: {}, data: {:?} }}", id, data)
+//             }
+//             Value::String {
+//                 string,
+//                 encode_class,
+//             } => string.fmt(f),
+//             Value::Bytes(v) => v.fmt(f),
+//             Value::Map(v) => v.fmt(f),
+//             Value::List(v) => v.fmt(f),
+//             Value::Bool(v) => v.fmt(f),
+//             Value::SInt(v) => v.fmt(f),
+//             Value::UInt(v) => v.fmt(f),
+//             Value::Float32(v) => v.fmt(f),
+//             Value::Float64(v) => v.fmt(f),
+//             Value::Timestamp32(v) => v.fmt(f),
+//         }
+//     }
+// }
 
 #[derive(Clone)]
 pub struct Object {
@@ -91,34 +95,47 @@ pub struct Object {
 
 impl Debug for Object {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        if let Value::Map(m) = &self.value {
-            write!(f, "{{")?;
-            
-            for (i, (k, v)) in m.iter().enumerate() {
-                write!(f, "{:?}:{:?}", k, v)?;
-                if i != m.len() - 1 {
-                    write!(f, ", ")?;
-                }
-            }
-
-            write!(f, "}}")
-        } else {
-            self.value.fmt(f)
-        }
-
-        // f.debug_struct("Object").field("value", &self.value).field("length", &self.length).finish()
+        // if let Value::Map(m) = &self.value {
+        //     write!(f, "{{")?;
+        //     for (i, (k, v)) in m.iter().enumerate() {
+        //         write!(f, "{:?}:{:?}", k, v)?;
+        //         if i != m.len() - 1 {
+        //             write!(f, ", ")?;
+        //         }
+        //     }
+        //     write!(f, "}}")
+        // } else {
+        //     self.value.fmt(f)
+        // }
+        f.debug_struct("Object")
+            .field("value", &self.value)
+            .field("length", &self.length)
+            .finish()
     }
 }
 
 impl Object {
     pub fn class(&self) -> u8 {
-        self.value.class()
+        self.value.get_class_2bit()
     }
 
     pub fn string(s: String) -> Self {
         Object {
             length: s.len(),
-            value: Value::String(s),
+            value: Value::String {
+                string: s,
+                encode_class: true,
+            },
+        }
+    }
+
+    pub fn key_string(s: String) -> Self {
+        Object {
+            length: s.len(),
+            value: Value::String {
+                string: s,
+                encode_class: false,
+            },
         }
     }
 
@@ -129,7 +146,7 @@ impl Object {
         }
     }
 
-    pub fn map(m: Vec<(Object, Object)>) -> Self {
+    pub fn map(m: Vec<(String, Object)>) -> Self {
         Object {
             length: m.len(),
             value: Value::Map(m),
@@ -201,7 +218,10 @@ impl Object {
         let mut length = length;
 
         let value: Value = match class {
-            ValueClass::String => Value::String(String::new()),
+            ValueClass::String => Value::String {
+                string: String::new(),
+                encode_class: true,
+            },
             ValueClass::Bytes => Value::Bytes(Vec::new()),
             ValueClass::Collection => {
                 // check lower bit of length
@@ -272,8 +292,8 @@ impl From<Vec<u8>> for Object {
     }
 }
 
-impl From<Vec<(Object, Object)>> for Object {
-    fn from(m: Vec<(Object, Object)>) -> Self {
+impl From<Vec<(String, Object)>> for Object {
+    fn from(m: Vec<(String, Object)>) -> Self {
         Object::map(m)
     }
 }

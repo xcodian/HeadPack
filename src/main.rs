@@ -67,11 +67,18 @@ fn main() {
       "notifications": false
     });
 
-    let easy_as_pi = json!({ "easy": true, "as": { "pi": -3.1415927 } });
+    let easy_as_pi = json!({ "ImposterIsSus": "v1", "k2": { "k3": "v3" } });
 
-    let object = Object::from_json(easy_as_pi);
+    let test = json!({
+      "KEY": ["a", "b", "c"],
+    });
+
+    let object = Object::from_json(test);
+    let original_json = object.clone().into_json();
 
     let encoded = headpack_encode(object.clone());
+
+    println!("origina_json = {}", original_json);
 
     println!(
         "encoded: {} bytes: {}",
@@ -81,13 +88,8 @@ fn main() {
 
     let decoded = headpack_decode(VecDeque::from(encoded));
 
-    let original_json = object.clone().into_json();
     let decoded_json = decoded.clone().into_json();
 
-    println!("original: {}", original_json);
     println!(" decoded: {}", decoded_json);
-    println!(
-        "equality: {}",
-        original_json == decoded_json
-    )
+    println!("equality: {}", original_json == decoded_json)
 }

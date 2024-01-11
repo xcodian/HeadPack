@@ -7,8 +7,11 @@ use crate::{
 
 /// warning: mutates `data`
 pub fn headpack_decode(mut data: VecDeque<u8>) -> Object {
-    let kinds = decode_classes_section(&mut data);
-    let objects = decode_lengths_section(&kinds, &mut data);
+    let (classes, is_root_map) = decode_classes_section(&mut data);
+    dbg!(classes.clone(), is_root_map);
+
+    let objects = decode_lengths_section(&classes, &mut data);
+    dbg!(objects.clone());
 
     let mut collapsed = Vec::with_capacity(objects.len());
 
@@ -18,14 +21,18 @@ pub fn headpack_decode(mut data: VecDeque<u8>) -> Object {
         return collapsed.pop().unwrap();
     }
 
-    if collapsed.len() % 2 == 0 {
+    if is_root_map {
         let mut map_items = Vec::with_capacity(collapsed.len() / 2);
 
         while collapsed.len() >= 2 {
             let value = collapsed.pop().unwrap();
-            let key = collapsed.pop().unwrap();
+            let key_string_obj = collapsed.pop().unwrap();
 
-            map_items.push((key, value))
+            if let Value::String { string, .. } = key_string_obj.value {
+                map_items.push((string, value));
+            } else {
+                unreachable!();
+            }
         }
 
         map_items.reverse();
@@ -55,33 +62,71 @@ fn lengths_split(byte: u8) -> (u8, u8, u8, u8) {
     (a, b, c, d)
 }
 
-fn decode_classes_section(data: &mut VecDeque<u8>) -> Vec<ValueClass> {
-    let (first_len, val2, val3, val4) = classes_split(data.pop_front().unwrap());
+fn decode_classes_section(data: &mut VecDeque<u8>) -> (Vec<ValueClass>, bool) {
+    let first_byte = data.pop_front().unwrap();
 
-    if first_len == 0 {
-        return vec![];
+    // check if this is an empty map/object
+    // in this state, the first bit is 0, and the 3rd onwards are 001100
+    if (first_byte & 0b10111111) == 0b00001100 {
+        println!("detected empty");
+        data.push_front(first_byte);
+        return (vec![], first_byte & 0b01000000 == 0b01000000);
     }
 
-    if first_len == 3 {
-        // all 3 values are types, and this is it
-        return vec![val2.into(), val3.into(), val4.into()];
+    let (flags, obj1, obj2, chunk2_len) = classes_split(first_byte);
+
+    // is the root object a map or a list?
+    let is_root_map = (flags & 0b01) == 0b01;
+
+    // check bit 1 of flags
+    // if this is set, then there's 2 class definitions in the first byte, otherwise it's 1
+    if (flags & 0b10) == 0b00 {
+        // just 1 class def
+
+        if is_root_map {
+            return (vec![ValueClass::String, obj1.into()], true);
+        } else {
+            return (vec![obj1.into()], false);
+        }
     }
 
-    assert_eq!(first_len, 2);
+    let mut classes;
 
-    let mut classes = vec![val2.into(), val3.into()];
-    let mut next_len = val4;
+    if is_root_map {
+        classes = vec![
+            ValueClass::String,
+            obj1.into(),
+            ValueClass::String,
+            obj2.into(),
+        ];
+    } else {
+        classes = vec![obj1.into(), obj2.into()];
+    }
+
+    let mut next_len = chunk2_len;
 
     while next_len > 0 {
         let (val1, val2, val3, val4) = classes_split(data.pop_front().unwrap());
 
+        if is_root_map {
+            classes.push(ValueClass::String);
+        }
+
         classes.push(val1.into());
 
         if next_len >= 2 {
+            if is_root_map {
+                classes.push(ValueClass::String);
+            }
+
             classes.push(val2.into());
         }
 
         if next_len == 3 {
+            if is_root_map {
+                classes.push(ValueClass::String);
+            }
+
             classes.push(val3.into());
             next_len = val4;
         } else {
@@ -89,7 +134,7 @@ fn decode_classes_section(data: &mut VecDeque<u8>) -> Vec<ValueClass> {
         }
     }
 
-    classes
+    (classes, is_root_map)
 }
 
 fn decode_lengths_section(classes: &[ValueClass], buf: &mut VecDeque<u8>) -> Vec<Object> {
@@ -100,12 +145,11 @@ fn decode_lengths_section(classes: &[ValueClass], buf: &mut VecDeque<u8>) -> Vec
     let mut objects = Vec::with_capacity(classes.len());
 
     // current index into `kinds`
-    let mut idx = 0;
+    let mut idx_into_classes = 0;
 
     // current length of the object we're decoding
     let mut length = 0;
-
-    while idx < classes.len() {
+    while idx_into_classes < classes.len() {
         let (length_chunk, continue_flag) = lengths_next_chunk(&mut chunks, buf);
 
         // combine the length chunk with the current length
@@ -117,16 +161,21 @@ fn decode_lengths_section(classes: &[ValueClass], buf: &mut VecDeque<u8>) -> Vec
         }
 
         // we're done with this length
-        objects.push(Object::from_class(classes[idx], length));
 
-        idx += 1;
+        let obj = Object::from_class(classes[idx_into_classes], length);
+        objects.push(obj);
+
+        idx_into_classes += 1;
         length = 0;
     }
 
     // copy data into string and bytes objects
     for object in objects.iter_mut() {
         match object.value {
-            Value::String(ref mut string) => {
+            Value::String {
+                ref mut string,
+                encode_class,
+            } => {
                 // this does no validation, but it's not supposed to (i think?)
                 let chars = buf.drain(..object.length).map(|b| b as char);
                 string.extend(chars);
@@ -211,9 +260,13 @@ pub fn collapse_collections(
                     let key = flat.pop_front().unwrap();
                     let value = flat.pop_front().unwrap();
 
-                    v.push((key, value))
+                    if let Value::String { string: key_string, .. } = key.value {
+                        v.push((key_string, value))
+                    } else {
+                        unreachable!()
+                    }
                 }
-                
+
                 assert_eq!(flat.len(), 0);
             }
             _ => {}
