@@ -139,6 +139,16 @@ impl Object {
         }
     }
 
+    pub fn sized_string(length: usize) -> Self {
+        Object {
+            length,
+            value: Value::String {
+                string: String::with_capacity(length),
+                encode_class: false,
+            },
+        }
+    }
+
     pub fn bytes(b: Vec<u8>) -> Self {
         Object {
             length: b.len(),
@@ -211,12 +221,11 @@ impl Object {
     }
 
     /*
-       class: the ValueClass decoded from the TYPE section
-       length: the length of the object, decoded from the LENGTH section
+        class: the ValueClass decoded from the classes section
+        length: the length of the object, decoded from the length section
+        WARNING: the length is a &mut reference because it SHOULD get updated by this function
     */
-    pub fn from_class(class: ValueClass, length: usize) -> Self {
-        let mut length = length;
-
+    pub fn from_class_and_length(class: ValueClass, length: &mut usize) -> Self {
         let value: Value = match class {
             ValueClass::String => Value::String {
                 string: String::new(),
@@ -225,52 +234,52 @@ impl Object {
             ValueClass::Bytes => Value::Bytes(Vec::new()),
             ValueClass::Collection => {
                 // check lower bit of length
-                if length & 1 == 1 {
-                    length = length >> 1;
-                    Value::List(Vec::with_capacity(length))
+                if *length & 1 == 1 {
+                    *length >>= 1;
+                    Value::List(Vec::with_capacity(*length))
                 } else {
-                    length = length >> 1;
-                    Value::Map(Vec::with_capacity(length))
+                    *length >>= 1;
+                    Value::Map(Vec::with_capacity(*length))
                 }
             }
             ValueClass::Fixed => match length {
                 0..=16 => Value::SInt(0),
                 17..=32 => {
-                    length -= 16;
+                    *length -= 16;
                     Value::UInt(0)
                 }
                 33 => {
-                    length = 4;
+                    *length = 4;
                     Value::Float32(0.0)
                 }
                 34 => {
-                    length = 8;
+                    *length = 8;
                     Value::Float64(0.0)
                 }
                 35 => {
-                    length = 0;
+                    *length = 0;
                     Value::Null
                 }
                 36 => {
-                    length = 0;
+                    *length = 0;
                     Value::Bool(false)
                 }
                 37 => {
-                    length = 0;
+                    *length = 0;
                     Value::Bool(true)
                 }
                 38 => {
-                    length = 4;
+                    *length = 4;
                     Value::Timestamp32(0)
                 }
-                id => Value::UserDefined {
-                    id: id as u8,
+                _ => Value::UserDefined {
+                    id: *length as u8,
                     data: Vec::new(),
                 },
             },
         };
 
-        Object { value, length }
+        Object { value, length: *length }
     }
 }
 

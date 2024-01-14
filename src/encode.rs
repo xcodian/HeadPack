@@ -21,6 +21,7 @@ pub fn headpack_encode(root: Object) -> Vec<u8> {
     flatten_map_or_list(root, &mut objects);
 
     write_classes_section(&objects, &mut buf, is_root_map);
+
     write_lengths_section(&objects, &mut buf);
 
     write_data(objects.into_iter(), &mut buf).unwrap();
@@ -31,8 +32,6 @@ pub fn headpack_encode(root: Object) -> Vec<u8> {
 fn flatten_map_or_list(map_or_list: Object, into: &mut Vec<Object>) {
     match map_or_list.value {
         Value::Map(items) => {
-            // println!("map {}", dbg!(items.len()));
-
             for (key, value_object) in items.into_iter() {
                 into.push(Object::key_string(key));
 
@@ -58,10 +57,6 @@ fn flatten_map_or_list(map_or_list: Object, into: &mut Vec<Object>) {
             }
         }
         Value::List(elements) => {
-            into.push(Object {
-                value: Value::List(Vec::new()),
-                length: map_or_list.length,
-            });
 
             for element in elements.into_iter() {
                 match element.value {
@@ -89,57 +84,6 @@ fn flatten_map_or_list(map_or_list: Object, into: &mut Vec<Object>) {
     }
 }
 
-// pub fn expand_collections_of(object: &mut Object, into: &mut Vec<Object>) {
-
-//     let iter = match object.value {
-//         Value::Map(items) => {
-//             item
-//         }
-//     }
-
-//     for object in iter {
-//         match object.value {
-//             object::Value::List(elements) => {
-//                 if elements.len() % 2 == 0 {
-//                     // push an empty list object
-//                     into.push(Object {
-//                         value: object::Value::List(Vec::new()),
-//                         length: object.length,
-//                     });
-//                 } // not needed if odd, because it can't be a map
-
-//                 expand_collections_of(&mut elements.into_iter(), into);
-//             }
-//             object::Value::Map(items) => {
-//                 // push an empty map object
-//                 into.push(Object {
-//                     value: object::Value::Map(Vec::new()),
-//                     length: object.length,
-//                 });
-
-//                 for (mut k, v) in items.into_iter() {
-//                     if let object::Value::String {
-//                         ref string,
-//                         ref mut encode_class,
-//                     } = k.value
-//                     {
-//                         // push a user-defined object
-//                         *encode_class = false;
-//                         println!("set encode_class to false on {}", string)
-//                     } else {
-//                         panic!("map key must be a string")
-//                     }
-
-//                     expand_collections_of(&mut [k, v].into_iter(), into);
-//                 }
-//             }
-//             _ => {
-//                 into.push(object);
-//             }
-//         }
-//     }
-// }
-
 fn write_classes_section(objects: &[Object], data: &mut Vec<u8>, is_root_map: bool) {
     let objects: Vec<Object> = objects
         .into_iter()
@@ -161,7 +105,6 @@ fn write_classes_section(objects: &[Object], data: &mut Vec<u8>, is_root_map: bo
     let mut len = objects.len();
 
     // dbg!(len);
-    // dbg!(objects.clone());
 
     // first byte
 
@@ -178,11 +121,9 @@ fn write_classes_section(objects: &[Object], data: &mut Vec<u8>, is_root_map: bo
 
     if len == 0 {
         // this exact pattern signifies an empty map or list
-        println!("empty");
         data.push(classes_join(flags, 0, 0b11, 0));
         return;
     } else if len == 1 {
-        println!("1 object");
         data.push(classes_join(flags, objects[0].class(), 0, 0));
         return;
     }
@@ -303,6 +244,7 @@ fn write_lengths_section(objects: &[Object], data: &mut Vec<u8>) {
 
     // convert &[Object] to &[&Object]
     let objects: Vec<&Object> = objects.iter().collect();
+
     write_length_chunks(&objects, &mut chunks);
 
     // pair up two four-bit chunks into a byte
@@ -364,7 +306,7 @@ fn write_data(objects: impl Iterator<Item = Object>, buf: &mut Vec<u8>) -> io::R
         match object.value {
             Value::String {
                 string,
-                encode_class,
+                encode_class: _,
             } => {
                 buf.write(string.as_bytes())?;
             }

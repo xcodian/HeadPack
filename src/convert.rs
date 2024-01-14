@@ -15,13 +15,13 @@ impl Object {
                 } else if n.is_u64() {
                     Self::uint(n.as_u64().unwrap() as u128)
                 } else if n.is_f64() {
-                    let f = n.as_f64().unwrap();
+                    let double = n.as_f64().unwrap();
 
-                    // check if it fits in f32
-                    if f as f32 as f64 == f {
-                        Self::float32(f as f32)
+                    // check if f64 can be represented as a f32
+                    if double == double as f32 as f64 {
+                        Self::float32(double as f32)
                     } else {
-                        Self::float64(f)
+                        Self::float64(double)
                     }
                 } else {
                     unreachable!()
